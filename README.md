@@ -15,6 +15,24 @@ While developing, you do not need to run either of the Python files yourself. Th
 The backend (as a subprocess) will deploy on port `5058` by default.
 
 This architecture is very similar to how your bot will run once you deploy it. For more information about how to deploy your bot to the ChessHacks platform, see [the docs](https://docs.chesshacks.dev/).
+````markdown
+# ChessHacks Starter Bot
+
+This is a starter bot for ChessHacks. It includes a basic bot and devtools. This is designed to help you get used to what the interface for building a bot feels like, as well as how to scaffold your own bot.
+
+## Directory Structure
+
+`/devtools` is a Next.js app that provides a UI for testing your bot. It includes an analysis board that you can use to test your bot and play against your own bot. You do not need to edit, or look at, any of this code (unless you want to). This file should be gitignored. Find out why [here](#installing-devtools-if-you-did-not-run-npx-chesshacks-create).
+
+`/src` is the source code for your bot. You will need to edit this code to implement your own bot.
+
+`serve.py` is the backend that interacts with the Next.js and your bot (`/src/main.py`). It also handles hot reloading of your bot when you make changes to it. This file, after receiving moves from the frontend, will communicate the current board status to your bot as a PGN string, and will send your bot's move back to the frontend. You do not need to edit any of this code (unless you want to).
+
+While developing, you do not need to run either of the Python files yourself. The Next.js app includes the `serve.py` file as a subprocess, and will run it for you when you run `npm run dev`.
+
+The backend (as a subprocess) will deploy on port `5058` by default.
+
+This architecture is very similar to how your bot will run once you deploy it. For more information about how to deploy your bot to the ChessHacks platform, see [the docs](https://docs.chesshacks.dev/).
 
 ## Setup
 
@@ -92,3 +110,30 @@ By default, the Next.js app will automatically reload (dismount and remount the 
 Keep in mind that you fully own all of this code! This entire devtool system runs locally, so feel free to modify it however you want. This is just designed as scaffolding to help you get started.
 
 If you need further help, please first check out the [docs](https://docs.chesshacks.dev/). If you still need help, please join our [Discord](https://docs.chesshacks.dev/resources/discord) and ask for help.
+
+## Improving Move Quality (MCTS tuning & Stockfish fallback)
+
+This project includes improvements to make moves stronger and more robust:
+
+- Promotion-aware policy mapping: the network policy uniquely encodes promotion piece choices.
+- MCTS improvements: configurable `c_puct`, `dirichlet_alpha`, `dirichlet_eps`, `temperature`, and `num_simulations`.
+- Optional Stockfish fallback: if the model is uncertain (top move probability below a threshold), the engine can be queried for a stronger move.
+
+Quick tuning suggestions:
+- Online play: `num_simulations=50`, `temperature=0.1` (more greedy), `dirichlet_eps=0.0`.
+- Self-play / training data generation: `num_simulations=400`, `temperature=1.0`, `dirichlet_eps=0.25`, `dirichlet_alpha=0.3`.
+- Stockfish fallback: enable by setting `ENABLE_STOCKFISH_FALLBACK=True` in `src/main.py`; adjust `STOCKFISH_CONFIDENCE_THRESHOLD` (default 0.20) and `STOCKFISH_TIME_LIMIT`.
+
+Files touched for these improvements:
+- `src/train.py` (promotion mapping, MCTS knobs)
+- `src/main.py` (online defaults + Stockfish helper)
+- `tests/*_smoke.py` (small smoke tests for promotion, MCTS noise, and Stockfish fallback)
+
+Run smoke tests (they skip if optional deps are missing):
+```bash
+python tests/mcts_noise_smoke.py
+python tests/promotion_roundtrip.py
+python tests/stockfish_fallback_smoke.py
+```
+
+````

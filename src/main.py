@@ -9,6 +9,7 @@ import torch
 import numpy as np
 import os
 import sys
+import time
 
 # ----------------------------
 # Import training code
@@ -36,6 +37,46 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = None
 mcts = None
 
+# --- Stockfish fallback configuration ---
+# Set `ENABLE_STOCKFISH_FALLBACK` to True to allow the engine to override
+# model moves when model confidence is low. Adjust `STOCKFISH_PATH` if the
+# binary isn't on your PATH. `STOCKFISH_CONFIDENCE_THRESHOLD` is the top
+# model probability under which we query the engine.
+ENABLE_STOCKFISH_FALLBACK = False
+STOCKFISH_PATH = "stockfish"
+STOCKFISH_TIME_LIMIT = 0.02  # seconds per query (small for quick fallback)
+STOCKFISH_CONFIDENCE_THRESHOLD = 0.20
+
+def query_stockfish(board, engine_path=STOCKFISH_PATH, time_limit=STOCKFISH_TIME_LIMIT):
+    """Query a UCI engine for its best move on `board`.
+
+    Returns (move, error_str). If engine not available or fails, move is None
+    and error_str contains a message.
+    """
+    try:
+        import chess.engine
+    except Exception as e:
+        return None, f"python-chess engine API not available: {e}"
+
+    try:
+        engine = chess.engine.SimpleEngine.popen_uci(engine_path)
+    except Exception as e:
+        return None, f"Failed to start engine '{engine_path}': {e}"
+
+    try:
+        limit = chess.engine.Limit(time=time_limit)
+        result = engine.play(board, limit)
+        move = result.move
+    except Exception as e:
+        return None, f"Engine query failed: {e}"
+    finally:
+        try:
+            engine.close()
+        except Exception:
+            pass
+
+    return move, None
+
 if ChessNet is not None and os.path.exists(MODEL_PATH):
     try:
         print(f"Loading AlphaZero model from {MODEL_PATH}...")
@@ -59,12 +100,33 @@ if ChessNet is not None and os.path.exists(MODEL_PATH):
             else:
                 cleaned_state_dict[k] = v
 
+        # Verify policy head size in checkpoint matches current model
+        # Find a policy head weight key in the checkpoint
+        policy_weight_key = None
+        for k in cleaned_state_dict.keys():
+            if 'policy_head' in k and k.endswith('.weight'):
+                policy_weight_key = k
+                break
+
+        if policy_weight_key is not None:
+            ckpt_out = cleaned_state_dict[policy_weight_key].shape[0]
+            model_out = model.policy_head[-1].out_features
+            if ckpt_out != model_out:
+                raise RuntimeError(
+                    f"Checkpoint policy size ({ckpt_out}) does not match model policy size ({model_out}).\n"
+                    "This repository now uses a promotion-aware policy mapping.\n"
+                    "You can: (1) convert your checkpoint to the new mapping,\n"
+                    "(2) re-train the model, or (3) use an older branch that expects the old policy size."
+                )
+
         model.load_state_dict(cleaned_state_dict)
         model.eval()
 
         # Create MCTS instance
-        # Use fewer simulations for speed in online play
-        mcts = MCTS(model, num_simulations=50, batch_size=8)
+        # Use fewer simulations for speed in online play (online defaults)
+        # For online: temperature=0.1 (more greedy), sims=50. For self-play,
+        # prefer temperature=1.0 and sims=400.
+        mcts = MCTS(model, num_simulations=50, batch_size=8, temperature=0.1)
 
         iteration = checkpoint.get('iteration', 'unknown')
         print(f"Model loaded successfully (iteration {iteration})")
@@ -119,6 +181,21 @@ def get_move_from_model(board: chess.Board) -> tuple[Move, dict]:
 
     # Pick move with highest visit count
     best_move = max(move_visits, key=move_visits.get)
+
+    # If Stockfish fallback is enabled and model confidence is low, query engine
+    try:
+        top_prob = max(move_probs.values()) if move_probs else 0.0
+    except Exception:
+        top_prob = 0.0
+
+    if ENABLE_STOCKFISH_FALLBACK and top_prob < STOCKFISH_CONFIDENCE_THRESHOLD:
+        print(f"Top model prob {top_prob:.3f} < threshold {STOCKFISH_CONFIDENCE_THRESHOLD}, querying engine...")
+        engine_move, err = query_stockfish(board)
+        if engine_move:
+            print(f"Stockfish fallback using move {engine_move.uci()}")
+            best_move = engine_move
+        else:
+            print(f"Stockfish fallback failed: {err}")
 
     return best_move, move_probs
 
@@ -330,6 +407,9 @@ def reset(ctx: GameContext):
 # # import chess.pgn
 # # import random
 # # import io
+
+    
+
 # # import torch
 # # from transformers import AutoModelForCausalLM, AutoTokenizer
 

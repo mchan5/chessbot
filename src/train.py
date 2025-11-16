@@ -9,6 +9,16 @@ import chess
 import math
 from tqdm import tqdm
 
+# Policy mapping constants
+# Base policy maps (from_square * 64 + to_square) => 4096 entries
+# Promotions are encoded by extending the policy with 4 slots per from-to
+# index: index = POLICY_BASE + (from*64 + to) * 4 + promo_idx
+# where promo_idx maps to [QUEEN, ROOK, BISHOP, KNIGHT]. This keeps
+# a simple deterministic mapping and ensures promotions round-trip.
+PROMOTION_PIECES = [chess.QUEEN, chess.ROOK, chess.BISHOP, chess.KNIGHT]
+POLICY_BASE = 64 * 64
+POLICY_SIZE = POLICY_BASE * (1 + len(PROMOTION_PIECES))
+
 # Set device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
@@ -55,7 +65,7 @@ class ChessNet(nn.Module):
             nn.BatchNorm2d(32),
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(32 * 8 * 8, 4096)  # 64*64 possible from-to squares
+            nn.Linear(32 * 8 * 8, POLICY_SIZE)
         )
 
         # Value head - predicts position score
@@ -147,25 +157,56 @@ def encode_board(board):
 
 
 def move_to_index(move):
-    """Convert move to policy index (from_square * 64 + to_square)"""
-    return move.from_square * 64 + move.to_square
+    """Convert move to policy index.
+
+    Mapping:
+    - Non-promotion moves: index = from_square * 64 + to_square
+    - Promotion moves: index = POLICY_BASE + (from*64 + to) * N + promo_idx
+      where N = len(PROMOTION_PIECES) and promo_idx is the index of the
+      promotion piece in PROMOTION_PIECES.
+
+    This deterministic mapping lets the policy uniquely represent promotion
+    piece choices.
+    """
+    base_idx = move.from_square * 64 + move.to_square
+    if move.promotion is None:
+        return base_idx
+
+    # Promotion: map to extended region
+    try:
+        promo_idx = PROMOTION_PIECES.index(move.promotion)
+    except ValueError:
+        # Unknown promotion type - fallback to base index
+        return base_idx
+
+    return POLICY_BASE + base_idx * len(PROMOTION_PIECES) + promo_idx
 
 
 def index_to_move(index, board):
     """Convert policy index to move"""
-    from_square = index // 64
-    to_square = index % 64
-    move = chess.Move(from_square, to_square)
+    # Non-promotion region
+    if index < POLICY_BASE:
+        from_square = index // 64
+        to_square = index % 64
+        move = chess.Move(from_square, to_square)
+        if move in board.legal_moves:
+            return move
+        # No valid non-promotion move found
+        return None
 
-    # Handle promotions
-    if move in board.legal_moves:
-        return move
+    # Promotion region
+    rem = index - POLICY_BASE
+    n_promos = len(PROMOTION_PIECES)
+    base_idx = rem // n_promos
+    promo_idx = rem % n_promos
 
-    # Try queen promotion
-    for promotion in [chess.QUEEN, chess.ROOK, chess.BISHOP, chess.KNIGHT]:
-        promoted_move = chess.Move(from_square, to_square, promotion=promotion)
-        if promoted_move in board.legal_moves:
-            return promoted_move
+    from_square = base_idx // 64
+    to_square = base_idx % 64
+    promotion = PROMOTION_PIECES[promo_idx]
+
+    promoted_move = chess.Move(from_square, to_square, promotion=promotion)
+    if promoted_move in board.legal_moves:
+        return promoted_move
 
     return None
 
@@ -204,8 +245,13 @@ class MCTSNode:
         return max(self.children.values(),
                    key=lambda node: node.ucb_score(self.visit_count, c_puct))
 
-    def expand(self, policy_probs):
-        """Expand node by adding children for legal moves"""
+    def expand(self, policy_probs, dirichlet_alpha=0.0, dirichlet_eps=0.0):
+        """Expand node by adding children for legal moves.
+
+        If this node is the root (parent is None) and dirichlet_eps>0,
+        mix the normalized policy probabilities with a Dirichlet noise
+        vector: probs = (1 - eps) * probs + eps * dir_noise.
+        """
         if self.is_expanded:
             return
 
@@ -217,15 +263,34 @@ class MCTSNode:
         # Normalize probabilities over legal moves
         move_probs = {}
         total_prob = 0
+        probs_list = []
         for move in legal_moves:
             idx = move_to_index(move)
-            prob = policy_probs[idx] if idx < len(policy_probs) else 1e-8
-            move_probs[move] = max(prob, 1e-8)
-            total_prob += move_probs[move]
+            prob = float(policy_probs[idx]) if idx < len(policy_probs) else 1e-8
+            prob = max(prob, 1e-8)
+            move_probs[move] = prob
+            probs_list.append(prob)
+            total_prob += prob
 
-        # Normalize
-        for move in legal_moves:
-            move_probs[move] /= total_prob
+        # Normalize into proper distribution
+        if total_prob > 0:
+            for move in legal_moves:
+                move_probs[move] /= total_prob
+
+        # If root node, optionally apply Dirichlet noise to encourage exploration
+        if self.parent is None and dirichlet_eps and dirichlet_alpha > 0:
+            alpha = dirichlet_alpha
+            eps = dirichlet_eps
+            # Dirichlet over legal move dimension
+            noise = np.random.dirichlet([alpha] * len(legal_moves))
+            for i, move in enumerate(legal_moves):
+                move_probs[move] = (1 - eps) * move_probs[move] + eps * noise[i]
+
+            # Renormalize after mixing
+            s = sum(move_probs.values())
+            if s > 0:
+                for move in legal_moves:
+                    move_probs[move] /= s
 
         # Create child nodes
         for move in legal_moves:
@@ -244,11 +309,22 @@ class MCTSNode:
 
 
 class MCTS:
-    """Monte Carlo Tree Search with batched evaluation"""
-    def __init__(self, model, num_simulations=100, batch_size=8):
+    """Monte Carlo Tree Search with batched evaluation
+
+    Configurable parameters:
+    - c_puct: controls exploration-exploitation in UCB
+    - dirichlet_alpha / dirichlet_eps: root noise mixture (AlphaZero style)
+    - temperature: final distribution temperature (1.0 = standard, <1 more greedy)
+    """
+    def __init__(self, model, num_simulations=100, batch_size=8, c_puct=1.5,
+                 dirichlet_alpha=0.3, dirichlet_eps=0.25, temperature=1.0):
         self.model = model
         self.num_simulations = num_simulations
         self.batch_size = batch_size
+        self.c_puct = c_puct
+        self.dirichlet_alpha = dirichlet_alpha
+        self.dirichlet_eps = dirichlet_eps
+        self.temperature = temperature
 
     @torch.no_grad()
     def search(self, board):
@@ -269,7 +345,7 @@ class MCTS:
                 while node.is_expanded and node.children:
                     if node.board.is_game_over():
                         break
-                    node = node.select_child()
+                    node = node.select_child(self.c_puct)
 
                 # Separate terminal vs non-terminal nodes
                 if node.board.is_game_over():
@@ -295,21 +371,40 @@ class MCTS:
                 policy_probs_batch = torch.softmax(policy_logits_batch, dim=1).cpu().numpy()
                 values_batch = values_batch.cpu().numpy().flatten()
 
-                # Expand and backpropagate
+                # Expand and backpropagate (pass dirichlet params for root expansion)
                 for i, node in enumerate(nodes_to_eval):
-                    node.expand(policy_probs_batch[i])
+                    node.expand(policy_probs_batch[i], dirichlet_alpha=self.dirichlet_alpha,
+                                dirichlet_eps=self.dirichlet_eps)
                     node.backpropagate(float(values_batch[i]))
 
             # Backpropagate terminal nodes
             for node, value in terminal_nodes:
                 node.backpropagate(value)
 
-        # Return visit count distribution as policy
-        visit_counts = np.zeros(4096)
+        # Return visit count distribution as policy (optionally apply temperature)
+        visit_counts = np.zeros(POLICY_SIZE)
         for move, child in root.children.items():
             visit_counts[move_to_index(move)] = child.visit_count
 
-        return visit_counts
+        # Apply temperature to produce final distribution
+        temp = self.temperature
+        if temp is None or temp == 1.0:
+            return visit_counts
+
+        # Temperature <= 0 treated as greedy deterministic
+        if temp <= 0.0:
+            probs = np.zeros_like(visit_counts, dtype=float)
+            if visit_counts.sum() > 0:
+                probs[np.argmax(visit_counts)] = 1.0
+            return probs
+
+        # Soften/sharpen distribution: counts^(1/T)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            adjusted = np.power(visit_counts, 1.0 / temp)
+        s = adjusted.sum()
+        if s > 0:
+            adjusted = adjusted / s
+        return adjusted
 
 
 # ==================== DATASET ====================
