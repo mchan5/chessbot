@@ -14,7 +14,8 @@ import sys
 # Import training code
 # ----------------------------
 # Add the training repo to path so we can import train module
-TRAINING_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "ash-hf", "src")
+# TRAINING_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "ash-hf", "src")
+TRAINING_PATH = r"C:\Users\Happy\Desktop\ChessHacks\src"
 sys.path.insert(0, TRAINING_PATH)
 
 try:
@@ -30,13 +31,14 @@ except Exception as e:
 # ----------------------------
 # Load AlphaZero model
 # ----------------------------
-MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "ash-hf", "weights", "best_model.pt")
+MODEL_PATH = r"C:\Users\Happy\Desktop\ChessHacks\weights\best_model.pt"
+sys.path.insert(1, MODEL_PATH)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 model = None
 mcts = None
 
-if ChessNet is not None and os.path.exists(MODEL_PATH):
+if os.path.exists(MODEL_PATH):
     try:
         print(f"Loading AlphaZero model from {MODEL_PATH}...")
 
@@ -64,7 +66,7 @@ if ChessNet is not None and os.path.exists(MODEL_PATH):
 
         # Create MCTS instance
         # Use fewer simulations for speed in online play
-        mcts = MCTS(model, num_simulations=50, batch_size=8)
+        mcts = MCTS(model, num_simulations=200, batch_size=8)
 
         iteration = checkpoint.get('iteration', 'unknown')
         print(f"Model loaded successfully (iteration {iteration})")
@@ -96,8 +98,9 @@ def get_move_from_model(board: chess.Board) -> tuple[Move, dict]:
         tuple: (best_move, move_probabilities_dict)
     """
     if model is None or mcts is None or move_to_index is None:
+        print("MODEL NOT LOADED")
         raise RuntimeError("Model not loaded")
-
+        
     # Run MCTS search
     visit_counts = mcts.search(board)
 
