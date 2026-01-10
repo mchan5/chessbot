@@ -1,7 +1,6 @@
 # AlphaZero-Inspired Chessbot
 
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-ee4c2c.svg)](https://pytorch.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 
 This is a high-performance, AlphaZero-inspired chess engine built from scratch in PyTorch. It features a continuous reinforcement learning loop that combines supervised pre-training on expert human games with self-play refinement using Monte Carlo Tree Search (MCTS).
