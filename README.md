@@ -20,7 +20,7 @@ The system is optimized for modern hardware, using **Automatic Mixed Precision (
 The engine uses a **Residual Convolutional Neural Network (ResNet)** with the following specifications:
 
 * **Input:** 18-channel board representation (Piece locations, turns, castling rights, etc.).
-* **Backbone:** 3 Residual Blocks with 64 filters (lightweight for fast iteration).
+* **Backbone:** 12 Residual Blocks with 128 filters (lightweight for fast iteration).
 * **Heads:**
     * **Policy Head:** Outputs move probabilities (Softmax).
     * **Value Head:** Outputs position evaluation (Tanh, -1 to 1).
