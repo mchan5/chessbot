@@ -9,7 +9,7 @@ The system is optimized for modern hardware, using **Automatic Mixed Precision (
 
 ## Key Features
 
-* **Hybrid Training Pipeline:** Bootstraps knowledge from a **14M+ expert games** dataset via Hugging Face streaming before refining strategies through self-play.
+* **Hybrid Training Pipeline:** Bootstraps knowledge from a **14M+ expert games** dataset via HuggingFace streaming before refining strategies through self-play.
 * **AlphaZero Architecture:** Implements a ResNet-based policy-value network guided by Monte Carlo Tree Search (MCTS).
 * **High-Performance Inference:**
     * **JIT Compilation:** Uses `torch.compile` (PyTorch 2.0+) to reduce Python overhead.
@@ -29,3 +29,7 @@ The engine uses a **Residual Convolutional Neural Network (ResNet)** with the fo
 
 ## Improvements 
 This project is still being developed to further improve its performance, and integrate it into a website so it is more accessible and easier to play.
+
+## Acknowledgements
+This project was created during the Chesshacks hackathon in collaboration with Diya and Ian, as seen with their initial "spec/engine-improvement" branch. The initial framework for the project was also supplied by the hackathon. 
+Recently, I have continued this project as a personal endeavour, improving the bot's performance and completely rewriting the code. These new changes are reflected on the new 'main' branch. 
