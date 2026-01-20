@@ -11,7 +11,7 @@ The system is optimized for modern hardware, using **Automatic Mixed Precision (
 
 * **Hybrid Training Pipeline:** Bootstraps knowledge from a **14M+ expert games** dataset via HuggingFace streaming before refining strategies through self-play.
 * **AlphaZero Architecture:** Implements a ResNet-based policy-value network guided by Monte Carlo Tree Search (MCTS).
-* **High-Performance Inference:**
+* **High-Performance Inference, Achieving a 3.70x Increase in Speed:**
     * **JIT Compilation:** Uses `torch.compile` (PyTorch 2.0+) to reduce Python overhead.
     * **Mixed Precision:** Full support for FP16/TensorFloat32 on NVIDIA Ampere GPUs.
 * **Cloud-Native Design:** Built to run seamlessly on **Modal** for distribute, faster training and massive parallel game generation.
