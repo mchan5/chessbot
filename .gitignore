@@ -4,3 +4,10 @@ venv
 .env.local
 .env
 /devtools
+.log
+.bat
+.exe
+.obj 
+.lib
+.exe 
+CuteChess Support

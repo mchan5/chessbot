@@ -14,7 +14,7 @@ import random
 # ==========================================
 # Define paths
 TRAINING_PATH = r"C:\Users\Matthew\Desktop\chessbot\chessbot\src"
-MODEL_PATH = os.path.join(TRAINING_PATH, "most_recent.pth")
+MODEL_PATH = os.path.join(TRAINING_PATH, "checkpoint.pth")
 
 if TRAINING_PATH not in sys.path:
     sys.path.insert(0, TRAINING_PATH)
@@ -72,7 +72,7 @@ def get_alphazero_move(board: chess.Board, time_limit_ms=None):
     try:
         # Override Config for PLAYING (Higher quality than training)
         Config.device = device
-        Config.num_simulations = 800  
+        Config.num_simulations = 800 
 
         mcts = ParallelMCTS(engine_net)
         roots = mcts.search([board])
