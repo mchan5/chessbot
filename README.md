@@ -9,9 +9,9 @@ The system is optimized for modern hardware, using **Automatic Mixed Precision (
 
 ## Key Features
 
-* **Hybrid Training Pipeline:** Bootstraps knowledge from a **14M+ expert games** dataset via Hugging Face streaming before refining strategies through self-play.
+* **Hybrid Training Pipeline:** Bootstraps knowledge from a **14M+ expert games** dataset via HuggingFace streaming before refining strategies through self-play.
 * **AlphaZero Architecture:** Implements a ResNet-based policy-value network guided by Monte Carlo Tree Search (MCTS).
-* **High-Performance Inference:**
+* **High-Performance Inference, Achieving a 3.70x Increase in Speed:**
     * **JIT Compilation:** Uses `torch.compile` (PyTorch 2.0+) to reduce Python overhead.
     * **Mixed Precision:** Full support for FP16/TensorFloat32 on NVIDIA Ampere GPUs.
 * **Cloud-Native Design:** Built to run seamlessly on **Modal** for distribute, faster training and massive parallel game generation.
@@ -20,7 +20,7 @@ The system is optimized for modern hardware, using **Automatic Mixed Precision (
 The engine uses a **Residual Convolutional Neural Network (ResNet)** with the following specifications:
 
 * **Input:** 18-channel board representation (Piece locations, turns, castling rights, etc.).
-* **Backbone:** 3 Residual Blocks with 64 filters (lightweight for fast iteration).
+* **Backbone:** 12 Residual Blocks with 128 filters (lightweight for fast iteration).
 * **Heads:**
     * **Policy Head:** Outputs move probabilities (Softmax).
     * **Value Head:** Outputs position evaluation (Tanh, -1 to 1).
@@ -29,3 +29,7 @@ The engine uses a **Residual Convolutional Neural Network (ResNet)** with the fo
 
 ## Improvements 
 This project is still being developed to further improve its performance, and integrate it into a website so it is more accessible and easier to play.
+
+## Acknowledgements
+This project was created during the Chesshacks hackathon in collaboration with Diya and Ian, as seen with their initial "spec/engine-improvement" branch. The initial framework for the project was also supplied by the hackathon. 
+Recently, I have continued this project as a personal endeavour, improving the bot's performance and completely rewriting the code. These new changes are reflected on the new 'main' branch. 
