@@ -1,5 +1,8 @@
 {
   "dependencies": {
     "chesshacks": "^1.0.10"
+  },
+  "devDependencies": {
+    "baseline-browser-mapping": "^2.10.33"
   }
 }
