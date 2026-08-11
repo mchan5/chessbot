@@ -11,7 +11,8 @@ volume = modal.Volume.from_name("chess-weights", create_if_missing=True)
 
 # Image with all dependencies
 import os
-script_dir = os.path.dirname(os.path.abspath(__file__))
+script_dir = os.path.dirname(os.path.abspath(__file__))          # .../src/training
+src_dir = os.path.dirname(script_dir)                              # .../src
 
 image = (
     modal.Image.debian_slim(python_version="3.11")
@@ -21,7 +22,16 @@ image = (
         "tqdm",
         "python-chess",
     )
-    .add_local_dir(script_dir, "/root/src")  # Copy entire src directory
+    # Copy the whole src/ tree (not just src/training/) so training.py's
+    # `from model import ...` / `from config import ...` resolve on Modal
+    # the same way they do locally. checkpoint.pth is kept (self-play
+    # bootstraps from it); model_versions/ is excluded - it's ~190MB of
+    # old checkpoints not needed to start training, would just bloat/slow
+    # down every image build.
+    .add_local_dir(
+        src_dir, "/root/src",
+        ignore=["model_versions", "__pycache__", "*.pyc"],
+    )
 )
 
 
@@ -46,8 +56,9 @@ def continuous_train(
     """
     import sys
     sys.path.insert(0, "/root/src")
+    sys.path.insert(0, "/root/src/training")
 
-    from train_continuous import continuous_training
+    from training import continuous_training
 
     print("=" * 60)
     print("Starting continuous training on Modal")

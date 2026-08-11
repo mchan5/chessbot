@@ -44,7 +44,13 @@ args = parser.parse_args()
 games_target = max(0, args.games)
 puzzles_target = max(0, args.puzzles)
 
-os.makedirs("../data", exist_ok=True)
+# Script-relative, not cwd-relative: train.py's DATA_DIR resolves to
+# <repo_root>/data regardless of where it's invoked from, so this needs to
+# land in the same place rather than "../data" relative to whatever
+# directory preprocess.py happened to be run from.
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))          # .../src/training
+DATA_DIR = os.path.join(SCRIPT_DIR, "..", "..", "data")           # .../data
+os.makedirs(DATA_DIR, exist_ok=True)
 
 # ---- Load chess games dataset ----
 print("Loading chess games dataset using streaming mode...")
@@ -65,15 +71,19 @@ for i, game in enumerate(tqdm(games_ds, total=games_target, desc="Games")):
         if not moves:
             # Skip empty move lists
             continue
+        # winner is "white", "black", or None (draw/unknown) - carried
+        # through so training can assign real value targets instead of
+        # labeling every position from a decisive game as a draw.
         processed_games.append({
             "type": "game",
             "moves": moves,
+            "winner": game.get("winner"),
         })
     except Exception as e:
         print(f"Skipping game {i}: {e}")
         continue
 
-with open("../data/games.json", "w") as f:
+with open(os.path.join(DATA_DIR, "games.json"), "w") as f:
     json.dump(processed_games, f)
 
 print("Saved games.json with", len(processed_games), "games")
@@ -104,7 +114,7 @@ for i, p in enumerate(tqdm(puzzles_ds, total=puzzles_target, desc="Puzzles")):
         print(f"Skipping puzzle {i}: {e}")
         continue
 
-with open("../data/puzzles.json", "w") as f:
+with open(os.path.join(DATA_DIR, "puzzles.json"), "w") as f:
     json.dump(processed_puzzles, f)
 
 print("Saved puzzles.json with", len(processed_puzzles), "puzzles")

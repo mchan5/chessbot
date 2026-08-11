@@ -12,6 +12,10 @@ class Config:
     # --- MCTS SETTINGS ---
     num_simulations = 100    # Simulations per move during training
     c_puct = 1.0             # Exploration constant
+    mcts_batch_size = 16     # In-flight leaves collected per NN forward pass
+                              # (virtual loss) - see ParallelMCTS in model.py
+    dirichlet_alpha = 0.3     # Root noise concentration (AlphaZero's chess value).
+                              # Self-play only - see ParallelMCTS.search's dirichlet_epsilon
     
     # --- TRAINING HYPERPARAMETERS ---
     batch_size = 256         # Reduced from 512 to fit bigger model in VRAM
